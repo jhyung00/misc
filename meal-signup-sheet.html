@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meal Reimbursement Form</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Include html2pdf library for easy PDF conversion -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom touch-action to prevent scrolling while drawing on canvas */
+        #signature-pad {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 md:p-8">
+
+    <div id="form-container" class="bg-white rounded-2xl shadow-xl p-6 md:p-8 w-full max-w-lg border border-gray-100">
+        
+        <!-- The area that will be converted to PDF -->
+        <div id="pdf-content" class="p-2">
+            <h2 class="text-2xl font-bold text-gray-800 text-center mb-2">Student Meal Sign Up Sheet</h2>
+            <p class="text-center text-gray-600 mb-6 text-sm">Please fill out this form, save it as a PDF, and email or text the file back to me.</p>
+            
+            <div class="mb-4">
+                <label for="studentName" class="block text-sm font-semibold text-gray-700 mb-2">Student Full Name</label>
+                <input type="text" id="studentName" placeholder="Tap here to type your name" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow text-gray-800">
+            </div>
+
+            <div class="mb-6">
+                <label for="zagmail" class="block text-sm font-semibold text-gray-700 mb-2">Zagmail Address</label>
+                <input type="email" id="zagmail" placeholder="example@zagmail.gonzaga.edu" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow text-gray-800">
+                <!-- Custom error message container (hidden by default) -->
+                <p id="error-msg" class="text-red-500 text-sm mt-2 hidden">Please enter your full name and Zagmail before saving.</p>
+            </div>
+
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg mb-6">
+                <label class="block text-sm font-semibold text-gray-800 mb-2">Meals Covered:</label>
+                <ul class="text-gray-700 space-y-2">
+                    <li class="flex items-center"><span class="text-blue-500 mr-2">☑</span> July 30th, 2026 (Dinner)</li>
+                    <li class="flex items-center"><span class="text-blue-500 mr-2">☑</span> July 31st, 2026 (Dinner)</li>
+                    <li class="flex items-center"><span class="text-blue-500 mr-2">☑</span> August 1st, 2026 (Lunch)</li>
+                </ul>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Mobile Signature</label>
+                <p class="text-xs text-gray-500 mb-3">Use your finger or mouse to sign below.</p>
+                <canvas id="signature-pad" class="w-full h-40 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 cursor-crosshair"></canvas>
+            </div>
+        </div>
+
+        <!-- Buttons kept outside the PDF capture area -->
+        <div class="flex flex-col sm:flex-row justify-between gap-4 mt-6" id="action-buttons">
+            <button onclick="clearSignature()" 
+                    class="w-full sm:w-auto px-6 py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-200">
+                Clear Signature
+            </button>
+            <button onclick="generatePDF()" 
+                    class="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                Save as PDF
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('signature-pad');
+        const ctx = canvas.getContext('2d');
+        const errorMsg = document.getElementById('error-msg');
+        let isDrawing = false;
+
+        // Resize canvas to properly fit the container on mobile devices based on its styling
+        function resizeCanvas() {
+            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+            // Get actual dimensions rendered by Tailwind classes
+            const rect = canvas.getBoundingClientRect();
+            
+            // Set actual canvas size
+            canvas.width = rect.width * ratio;
+            canvas.height = rect.height * ratio;
+            
+            // Scale context to ensure crisp lines
+            ctx.scale(ratio, ratio);
+            
+            // Set styles for drawing
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#1f2937'; // Tailwind gray-800
+        }
+        
+        // Listen for window resize to fix canvas scaling
+        window.addEventListener("resize", resizeCanvas);
+        // Initial setup timeout to ensure DOM is fully rendered
+        setTimeout(resizeCanvas, 100);
+
+        function getMousePos(canvas, evt) {
+            const rect = canvas.getBoundingClientRect();
+            // Handle both touch and mouse events
+            const clientX = evt.clientX || (evt.touches && evt.touches[0].clientX);
+            const clientY = evt.clientY || (evt.touches && evt.touches[0].clientY);
+            
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function startDrawing(e) {
+            e.preventDefault();
+            isDrawing = true;
+            const pos = getMousePos(canvas, e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            // Draw a dot immediately for taps
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+
+        function draw(e) {
+            e.preventDefault();
+            if (!isDrawing) return;
+            const pos = getMousePos(canvas, e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+
+        function stopDrawing(e) {
+            e.preventDefault();
+            if (isDrawing) {
+                ctx.closePath();
+                isDrawing = false;
+            }
+        }
+
+        // Mouse Events
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // Touch Events for Mobile
+        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing, { passive: false });
+        canvas.addEventListener('touchcancel', stopDrawing, { passive: false });
+
+        function clearSignature() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Hide error message when user starts typing
+        document.getElementById('studentName').addEventListener('input', function() {
+            errorMsg.classList.add('hidden');
+        });
+        document.getElementById('zagmail').addEventListener('input', function() {
+            errorMsg.classList.add('hidden');
+        });
+
+        // Generate PDF using html2pdf
+        function generatePDF() {
+            const studentNameInput = document.getElementById('studentName');
+            const zagmailInput = document.getElementById('zagmail');
+            const studentName = studentNameInput.value.trim();
+            const zagmail = zagmailInput.value.trim();
+            
+            // Validate name and email input
+            if (!studentName || !zagmail) {
+                errorMsg.classList.remove('hidden');
+                if (!studentName) {
+                    studentNameInput.focus();
+                } else {
+                    zagmailInput.focus();
+                }
+                return;
+            }
+
+            // Temporarily hide the action buttons so they are not captured in the PDF
+            const buttons = document.getElementById('action-buttons');
+            buttons.style.display = 'none';
+            
+            // Adjust styling slightly to ensure PDF looks perfect
+            const element = document.getElementById('pdf-content');
+            
+            // Set up PDF generation options
+            const opt = {
+                margin:       [0.5, 0.5, 0.5, 0.5], // Top, Left, Bottom, Right margins in inches
+                filename:     `${studentName.replace(/\s+/g, '_')}_Meal_SignUp.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+
+            // Generate the PDF, prompt download, and restore the interface
+            html2pdf().set(opt).from(element).save().then(() => {
+                // Restore buttons after PDF is generated
+                buttons.style.display = 'flex';
+                
+                // Show a brief success message inside the button
+                const btn = document.querySelector('button.bg-blue-600');
+                const originalText = btn.innerText;
+                btn.innerText = "Downloaded!";
+                btn.classList.replace('bg-blue-600', 'bg-green-600');
+                
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.classList.replace('bg-green-600', 'bg-blue-600');
+                }, 3000);
+            });
+        }
+    </script>
+</body>
+</html>
